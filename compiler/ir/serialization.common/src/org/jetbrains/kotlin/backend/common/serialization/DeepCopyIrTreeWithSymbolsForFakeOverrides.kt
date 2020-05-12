@@ -1,28 +1,28 @@
-/*
- * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
- * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
- */
+package org.jetbrains.kotlin.backend.common.serialization
 
-package org.jetbrains.kotlin.backend.common.lower.inline
-
-import org.jetbrains.kotlin.backend.common.CommonBackendContext
 import org.jetbrains.kotlin.backend.common.DescriptorsToIrRemapper
 import org.jetbrains.kotlin.backend.common.WrappedDescriptorPatcher
+import org.jetbrains.kotlin.descriptors.Modality
+import org.jetbrains.kotlin.descriptors.Visibility
 import org.jetbrains.kotlin.ir.IrElement
-import org.jetbrains.kotlin.ir.declarations.IrDeclarationParent
+import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrTypeParametersContainer
 import org.jetbrains.kotlin.ir.expressions.IrConstructorCall
-import org.jetbrains.kotlin.ir.symbols.*
+import org.jetbrains.kotlin.ir.symbols.IrClassifierSymbol
+import org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.types.impl.buildSimpleType
 import org.jetbrains.kotlin.ir.types.impl.makeTypeProjection
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.acceptVoid
-import org.jetbrains.kotlin.name.Name
 
-internal class DeepCopyIrTreeWithSymbolsForInliner(
+// This is basicly modelled after the inliner copier.
+class DeepCopyIrTreeWithSymbolsForFakeOverrides(
     val typeArguments: Map<IrTypeParameterSymbol, IrType?>?,
-    val parent: IrDeclarationParent?
+    val superType: IrType,
+    val parent: IrClass,
+    val newModality: Modality? = null,
+    val newVisibility: Visibility? = null
 ) {
 
     fun copy(irElement: IrElement): IrElement {
@@ -42,25 +42,7 @@ internal class DeepCopyIrTreeWithSymbolsForInliner(
         return result
     }
 
-    private var nameIndex = 0
-
-    private fun generateCopyName(name: Name) = Name.identifier(name.toString() + "_" + (nameIndex++).toString())
-
-    private inner class InlinerSymbolRenamer : SymbolRenamer {
-        private val map = mutableMapOf<IrSymbol, Name>()
-
-        override fun getClassName(symbol: IrClassSymbol) = map.getOrPut(symbol) { generateCopyName(symbol.owner.name) }
-        override fun getFunctionName(symbol: IrSimpleFunctionSymbol) = map.getOrPut(symbol) { generateCopyName(symbol.owner.name) }
-        override fun getFieldName(symbol: IrFieldSymbol) = symbol.owner.name
-        override fun getFileName(symbol: IrFileSymbol) = symbol.owner.fqName
-        override fun getExternalPackageFragmentName(symbol: IrExternalPackageFragmentSymbol) = symbol.owner.fqName
-        override fun getEnumEntryName(symbol: IrEnumEntrySymbol) = symbol.owner.name
-        override fun getVariableName(symbol: IrVariableSymbol) = map.getOrPut(symbol) { generateCopyName(symbol.owner.name) }
-        override fun getTypeParameterName(symbol: IrTypeParameterSymbol) = symbol.owner.name
-        override fun getValueParameterName(symbol: IrValueParameterSymbol) = symbol.owner.name
-    }
-
-    private inner class InlinerTypeRemapper(
+    private inner class FakeOverrideTypeRemapper(
         val symbolRemapper: SymbolRemapper,
         val typeArguments: Map<IrTypeParameterSymbol, IrType?>?
     ) : TypeRemapper {
@@ -98,7 +80,7 @@ internal class DeepCopyIrTreeWithSymbolsForInliner(
         }
     }
 
-    private class SymbolRemapperImpl(descriptorsRemapper: DescriptorsRemapper) : DeepCopySymbolRemapper(descriptorsRemapper) {
+    private class FakeOverrideSymbolRemapperImpl(descriptorsRemapper: DescriptorsRemapper) : DeepCopySymbolRemapper(descriptorsRemapper) {
 
         var typeArguments: Map<IrTypeParameterSymbol, IrType?>? = null
             set(value) {
@@ -116,7 +98,7 @@ internal class DeepCopyIrTreeWithSymbolsForInliner(
         }
     }
 
-    private val symbolRemapper = SymbolRemapperImpl(DescriptorsToIrRemapper)
+    private val symbolRemapper = FakeOverrideSymbolRemapperImpl(DescriptorsToIrRemapper)
     private val copier =
-        DeepCopyIrTreeWithSymbols(symbolRemapper, InlinerTypeRemapper(symbolRemapper, typeArguments), InlinerSymbolRenamer())
+        FakeOverrideCopier(symbolRemapper, FakeOverrideTypeRemapper(symbolRemapper, typeArguments), SymbolRenamer.DEFAULT, parent, newModality, newVisibility)
 }
