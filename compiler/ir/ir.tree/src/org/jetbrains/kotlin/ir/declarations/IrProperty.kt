@@ -23,12 +23,12 @@ import org.jetbrains.kotlin.ir.symbols.IrPropertySymbol
 interface IrProperty :
     IrDeclarationWithName,
     IrDeclarationWithVisibility,
+    IrOverridableMember,
     IrSymbolOwner {
 
     override val descriptor: PropertyDescriptor
     override val symbol: IrPropertySymbol
 
-    val modality: Modality
     val isVar: Boolean
     val isConst: Boolean
     val isLateinit: Boolean
