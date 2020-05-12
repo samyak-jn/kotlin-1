@@ -735,6 +735,29 @@ open class SymbolTable(
         }
     }
 
+    fun rebindSimpleFunction(
+        sig: IdSignature,
+        function: IrSimpleFunction
+    ) {
+        assert(sig.isPublic)
+        val symbol = simpleFunctionSymbolTable.referenced(sig) { error("Symbol for $sig must be in the symbol table") }
+        assert(symbol.owner == function)
+        simpleFunctionSymbolTable.unboundSymbols.remove(symbol)
+    }
+
+    fun rebindProperty(
+        sig: IdSignature,
+        property: IrProperty
+    ) {
+        assert(sig.isPublic)
+        val symbol = propertySymbolTable.referenced(sig) { error("Symbol for $sig must be in the symbol table") }
+        assert(symbol.owner == property)
+        propertySymbolTable.unboundSymbols.remove(symbol)
+    }
+    private fun createBuiltInOperatorSymbol(descriptor: FunctionDescriptor, sig: IdSignature): IrSimpleFunctionSymbol {
+        return IrSimpleFunctionPublicSymbolImpl(descriptor, sig)
+    }
+
     override fun referenceSimpleFunction(descriptor: FunctionDescriptor) =
         simpleFunctionSymbolTable.referenced(descriptor) { createSimpleFunctionSymbol(descriptor) }
 

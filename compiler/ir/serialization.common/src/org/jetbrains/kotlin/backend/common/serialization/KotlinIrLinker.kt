@@ -10,6 +10,7 @@ import org.jetbrains.kotlin.backend.common.serialization.encodings.BinarySymbolD
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.descriptors.impl.EmptyPackageFragmentDescriptor
 import org.jetbrains.kotlin.ir.IrElement
+import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrDeclaration
 import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
@@ -24,6 +25,10 @@ import org.jetbrains.kotlin.ir.symbols.*
 import org.jetbrains.kotlin.ir.symbols.impl.*
 import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.types.impl.IrErrorTypeImpl
+import org.jetbrains.kotlin.ir.util.IdSignature
+import org.jetbrains.kotlin.ir.util.IrDeserializer
+import org.jetbrains.kotlin.ir.util.NaiveSourceBasedFileEntryImpl
+import org.jetbrains.kotlin.ir.util.SymbolTable
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.library.IrLibrary
 import org.jetbrains.kotlin.library.KotlinLibrary
@@ -57,6 +62,9 @@ abstract class KotlinIrLinker(
     private val modulesWithReachableTopLevels = mutableSetOf<IrModuleDeserializer>()
 
     protected val deserializersForModules = mutableMapOf<ModuleDescriptor, IrModuleDeserializer>()
+
+    abstract val fakeOverrideBuilder: FakeOverrideBuilder
+    private val haveSeen = mutableSetOf<IrSymbol>()
 
     abstract inner class BasicIrModuleDeserializer(moduleDescriptor: ModuleDescriptor, override val klib: IrLibrary, override val strategy: DeserializationStrategy) :
         IrModuleDeserializer(moduleDescriptor) {
@@ -145,7 +153,13 @@ abstract class KotlinIrLinker(
             val fileEntry = NaiveSourceBasedFileEntryImpl(fileName, fileProto.fileEntry.lineStartOffsetsList.toIntArray())
 
             val fileDeserializer =
-                IrDeserializerForFile(fileProto.annotationList, fileProto.actualsList, fileIndex, !strategy.needBodies, strategy.inlineBodies, moduleDeserializer).apply {
+                IrDeserializerForFile(fileProto.annotationList,
+                                      fileProto.actualsList,
+                                      fileIndex,
+                                      !strategy.needBodies,
+                                       strategy.inlineBodies,
+                                      !strategy.fakeOverrides,
+                                      moduleDeserializer).apply {
 
                     // Explicitly exported declarations (e.g. top-level initializers) must be deserialized before all other declarations.
                     // Thus we schedule their deserialization in deserializer's constructor.
@@ -206,8 +220,9 @@ abstract class KotlinIrLinker(
         private val fileIndex: Int,
         onlyHeaders: Boolean,
         inlineBodies: Boolean,
-        private val moduleDeserializer: IrModuleDeserializer
-    ) : IrFileDeserializer(logger, builtIns, symbolTable, !onlyHeaders) {
+        constructFakeOverrrides: Boolean,
+        private val moduleDeserializer: IrModuleDeserializer,
+    ) : IrFileDeserializer(logger, builtIns, symbolTable, constructFakeOverrrides, !onlyHeaders) {
 
         private var fileLoops = mutableMapOf<Int, IrLoopBase>()
 
@@ -339,7 +354,9 @@ abstract class KotlinIrLinker(
         private fun deserializeIrSymbolData(idSignature: IdSignature, symbolKind: BinarySymbolData.SymbolKind): IrSymbol {
             if (idSignature.isLocal) return deserializeIrLocalSymbolData(idSignature, symbolKind)
 
-            return findModuleDeserializer(idSignature).deserializeIrSymbol(idSignature, symbolKind)
+            return findModuleDeserializer(idSignature).deserializeIrSymbol(idSignature, symbolKind).also {
+                haveSeen.add(it)
+            }
         }
 
         override fun deserializeIrSymbolToDeclare(code: Long): Pair<IrSymbol, IdSignature> {
@@ -483,6 +500,12 @@ abstract class KotlinIrLinker(
     private fun findDeserializedDeclarationForSymbol(symbol: IrSymbol): DeclarationDescriptor? {
         assert(symbol.isPublicApi || symbol.descriptor.module === currentModule || platformSpecificSymbol(symbol))
 
+        // TODO: check if we still need it in the rebased version.
+        if (haveSeen.contains(symbol)) {
+            return null
+        }
+        haveSeen.add(symbol)
+
         val descriptor = symbol.descriptor
 
         val moduleDeserializer = resolveModuleDeserializer(descriptor.module)
@@ -515,9 +538,11 @@ abstract class KotlinIrLinker(
         if (!symbol.isBound && (symbol.descriptor.isExpectMember || symbol.descriptor.containingDeclaration?.isExpectMember == true))
             return null
 
-        assert(symbol.isBound) {
-            "getDeclaration: symbol $symbol is unbound, descriptor = ${symbol.descriptor}, signature = ${symbol.signature}"
-        }
+        if (!symbol.isBound) return null
+
+        //assert(symbol.isBound) {
+        //    "getDeclaration: symbol $symbol is unbound, descriptor = ${symbol.descriptor}, signature = ${symbol.signature}"
+        //}
 
         return symbol.owner as IrDeclaration
     }
@@ -540,6 +565,18 @@ abstract class KotlinIrLinker(
     override fun postProcess() {
         deserializersForModules.values.forEach { it.postProcess() }
         finalizeExpectActualLinker()
+
+        deserializersForModules.values.forEach { irModule ->
+            // The current module has already gotten its fake overrides from psi2ir.
+            if (irModule.isCurrent ||
+                currentModule == null && irModule is IrModuleDeserializerWithBuiltIns) {
+                // TODO: build fake overrides for FunctionN interfaces?
+            }  else {
+                fakeOverrideBuilder.provideFakeOverrides(irModule.moduleFragment)
+            }
+        }
+
+        val unbound = symbolTable.noUnboundLeft("unbound after fake overrides:")
     }
 
     // The issue here is that an expect can not trigger its actual deserialization by reachability
@@ -618,10 +655,20 @@ abstract class KotlinIrLinker(
         deserializeIrModuleHeader(moduleDescriptor, kotlinLibrary, DeserializationStrategy.WITH_INLINE_BODIES)
 }
 
-enum class DeserializationStrategy(val needBodies: Boolean, val explicitlyExported: Boolean, val theWholeWorld: Boolean, val inlineBodies: Boolean) {
+enum class DeserializationStrategy(
+    val needBodies: Boolean,
+    val explicitlyExported: Boolean,
+    val theWholeWorld: Boolean,
+    val inlineBodies: Boolean,
+    val fakeOverrides: Boolean = FakeOverrideControl.deserializeFakeOverrides
+) {
     ONLY_REFERENCED(true, false, false, true),
     ALL(true, true, true, true),
     EXPLICITLY_EXPORTED(true, true, false, true),
     ONLY_DECLARATION_HEADERS(false, false, false, false),
     WITH_INLINE_BODIES(false, false, false, true)
+}
+
+interface AbstractFakeOverrideBuilder {
+    fun buildFakeOverridesForClass(clazz: IrClass)
 }

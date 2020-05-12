@@ -75,7 +75,7 @@ abstract class IrAbstractFunctionFactory {
     }
 }
 
-class IrFunctionFactory(private val irBuiltIns: IrBuiltIns, private val symbolTable: SymbolTable) : IrAbstractFunctionFactory() {
+class IrFunctionFactory(private val irBuiltIns: IrBuiltIns, private val symbolTable: SymbolTable/*, private val fakeOverrideBuilder: AbstractFakeOverrideBuilder*/) : IrAbstractFunctionFactory() {
 
     // TODO: Lazieness
 
@@ -333,6 +333,8 @@ class IrFunctionFactory(private val irBuiltIns: IrBuiltIns, private val symbolTa
         }
 
         addFakeOverrides()
+        // TODO: eventualy delegate it to fakeOverrideBuilder
+        // fakeOverrideBuilder.buildFakeOverridesForClass(this)
     }
 
     private fun toIrType(wrapped: KotlinType): IrType {
@@ -447,10 +449,10 @@ class IrFunctionFactory(private val irBuiltIns: IrBuiltIns, private val symbolTa
             buildSimpleType()
         })
 
-        klass.createMembers(isK, isSuspend, n, klass.name.identifier, descriptorFactory)
-
         klass.parent = packageFragment
         packageFragment.declarations += klass
+
+        klass.createMembers(isK, isSuspend, n, klass.name.identifier, descriptorFactory)
 
         return klass
     }

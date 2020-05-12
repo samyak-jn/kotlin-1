@@ -57,6 +57,8 @@ abstract class IrModuleDeserializer(val moduleDescriptor: ModuleDescriptor) {
     abstract val moduleDependencies: Collection<IrModuleDeserializer>
 
     open val strategy: DeserializationStrategy = DeserializationStrategy.ONLY_DECLARATION_HEADERS
+
+    open val isCurrent = false
 }
 
 // Used to resolve built in symbols like `kotlin.ir.internal.*` or `kotlin.FunctionN`
@@ -198,6 +200,7 @@ class IrModuleDeserializerWithBuiltIns(
 
     override val moduleFragment: IrModuleFragment get() = delegate.moduleFragment
     override val moduleDependencies: Collection<IrModuleDeserializer> get() = delegate.moduleDependencies
+    override val isCurrent get() = delegate.isCurrent
 }
 
 open class CurrentModuleDeserializer(
@@ -211,4 +214,6 @@ open class CurrentModuleDeserializer(
     }
 
     override fun declareIrSymbol(symbol: IrSymbol) {}
+
+    override val isCurrent = true
 }
