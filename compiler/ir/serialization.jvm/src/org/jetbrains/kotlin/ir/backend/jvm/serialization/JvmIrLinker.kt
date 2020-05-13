@@ -32,6 +32,8 @@ class JvmIrLinker(currentModule: ModuleDescriptor?, logger: LoggingContext, buil
     KotlinIrLinker(currentModule, logger, builtIns, symbolTable, emptyList()) {
 
     override val fakeOverrideBuilder = FakeOverrideBuilder(symbolTable, IdSignatureSerializer(JvmManglerIr), builtIns)
+    override val fakeOverrideChecker = FakeOverrideChecker(JvmManglerIr, JvmManglerDesc())
+
     override val functionalInteraceFactory: IrAbstractFunctionFactory = IrFunctionFactory(builtIns, symbolTable/*, fakeOverrideBuilder*/)
 
     private val javaName = Name.identifier("java")
