@@ -84,12 +84,6 @@ class FakeOverrideBuilder(
         return deepCopyFakeOverride as IrOverridableMember
     }
 
-    private val IrDeclaration.modality get() = when(this) {
-        is IrProperty -> this.modality
-        is IrSimpleFunction -> this.modality
-        else -> error("Could not take modality of ${this.render()}")
-    }
-
     fun buildFakeOverrideChainsForClass(clazz: IrClass) {
         if (haveFakeOverrides.contains(clazz)) return
         if (!platformSpecificClassFilter.constructFakeOverrides(clazz) || !clazz.symbol.isPublicApi) return

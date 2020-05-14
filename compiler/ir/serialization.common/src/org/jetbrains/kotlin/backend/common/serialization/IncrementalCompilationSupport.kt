@@ -105,8 +105,8 @@ class CurrentModuleWithICDeserializer(
         icDeserializer.deserializeReachableDeclarations()
     }
 
-    override fun postProcess() {
-        icDeserializer.postProcess()
+    override fun postProcess(postProcessor: (IrModuleFragment) -> Unit) {
+        icDeserializer.postProcess(postProcessor)
     }
 
     private fun DeclarationDescriptor.isDirtyDescriptor(): Boolean {

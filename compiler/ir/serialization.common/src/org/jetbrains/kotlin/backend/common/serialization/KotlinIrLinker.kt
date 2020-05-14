@@ -144,8 +144,6 @@ abstract class KotlinIrLinker(
             }
         }
 
-        override fun postProcess() {}
-
         override val moduleFragment: IrModuleFragment = IrModuleFragmentImpl(moduleDescriptor, builtIns, emptyList())
 
         private fun deserializeIrFile(fileProto: ProtoFile, fileIndex: Int, moduleDeserializer: IrModuleDeserializer): IrFile {
@@ -502,7 +500,6 @@ abstract class KotlinIrLinker(
     private fun findDeserializedDeclarationForSymbol(symbol: IrSymbol): DeclarationDescriptor? {
         assert(symbol.isPublicApi || symbol.descriptor.module === currentModule || platformSpecificSymbol(symbol))
 
-        // TODO: check if we still need it in the rebased version.
         if (haveSeen.contains(symbol)) {
             return null
         }
@@ -564,20 +561,14 @@ abstract class KotlinIrLinker(
         deserializersForModules.values.forEach { it.init() }
     }
 
-    override fun postProcess() {
-        deserializersForModules.values.forEach { it.postProcess() }
-        finalizeExpectActualLinker()
-
-        deserializersForModules.values.forEach { irModule ->
-            // The current module has already gotten its fake overrides from psi2ir.
-            if (irModule.isCurrent ||
-                currentModule == null && irModule is IrModuleDeserializerWithBuiltIns) {
-                // TODO: build fake overrides for FunctionN interfaces?
-            }  else {
-                fakeOverrideBuilder.provideFakeOverrides(irModule.moduleFragment)
-                fakeOverrideChecker.check(irModule.moduleFragment)
+    fun postProcess() {
+        deserializersForModules.values.forEach {
+            it.postProcess {
+                fakeOverrideBuilder.provideFakeOverrides(it)
+                fakeOverrideChecker.check(it)
             }
         }
+        finalizeExpectActualLinker()
 
         val unbound = symbolTable.noUnboundLeft("unbound after fake overrides:")
     }
