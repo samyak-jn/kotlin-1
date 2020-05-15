@@ -26,8 +26,6 @@ class JsIrLinker(
     override val fakeOverrideBuilder = FakeOverrideBuilder(symbolTable, IdSignatureSerializer(JsManglerIr), builtIns)
     override val fakeOverrideChecker = FakeOverrideChecker(JsManglerIr, JsManglerDesc)
 
-    override val functionalInteraceFactory: IrAbstractFunctionFactory = IrFunctionFactory(builtIns, symbolTable/*, fakeOverrideBuilder*/)
-
     override fun isBuiltInModule(moduleDescriptor: ModuleDescriptor): Boolean =
         moduleDescriptor === moduleDescriptor.builtIns.builtInsModule
 
