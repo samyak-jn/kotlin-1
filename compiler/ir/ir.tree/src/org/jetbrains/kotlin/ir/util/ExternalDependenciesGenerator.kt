@@ -48,7 +48,7 @@ class ExternalDependenciesGenerator(
         lateinit var prevUnbound: Set<IrSymbol>
         do {
             prevUnbound = unbound
-            unbound = symbolTable.allUnbound
+            unbound = symbolTable.allUnbound(languageVersionSettings.supportsFeature(LanguageFeature.NewInference))
 
             for (symbol in unbound) {
                 // Symbol could get bound as a side effect of deserializing other symbols.
@@ -62,30 +62,29 @@ class ExternalDependenciesGenerator(
     }
 }
 
-private val SymbolTable.allUnbound: Set<IrSymbol>
-get() {
+private fun SymbolTable.allUnbound(skipTypeParameters: Boolean): Set<IrSymbol> {
     val r = mutableSetOf<IrSymbol>()
-        r.addAll(unboundClasses)
-        r.addAll(unboundConstructors)
-        r.addAll(unboundEnumEntries)
-        r.addAll(unboundFields)
-        r.addAll(unboundSimpleFunctions)
-        r.addAll(unboundProperties)
-        r.addAll(unboundTypeAliases)
-        if (!languageVersionSettings.supportsFeature(LanguageFeature.NewInference)) {
-            r.addAll(unboundTypeParameters)
-        }
+    r.addAll(unboundClasses)
+    r.addAll(unboundConstructors)
+    r.addAll(unboundEnumEntries)
+    r.addAll(unboundFields)
+    r.addAll(unboundSimpleFunctions)
+    r.addAll(unboundProperties)
+    r.addAll(unboundTypeAliases)
+    if (!skipTypeParameters) {
+        r.addAll(unboundTypeParameters)
+    }
     return r
 }
 
 fun SymbolTable.noUnboundLeft(message: String) {
-    val unbound = this.allUnbound
-        assert(unbound.isEmpty()) {
-            "$message\n" +
+    val unbound = this.allUnbound(false)
+    assert(unbound.isEmpty()) {
+        "$message\n" +
                 unbound.map {
                     "$it ${if (it.isPublicApi) it.signature.toString() else "NON-PUBLIC API $it"}"
                 }.joinToString("\n")
-        }
+    }
 }
 
 
